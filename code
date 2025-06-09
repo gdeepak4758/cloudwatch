@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<process name="EDE_Cloudwatch_Process_Validated">
+<process name="EDE_Cloudwatch_Final_RepeatLoop">
 
   <!-- Rules -->
   <rule name="HAS_MORE_FILES">
@@ -7,11 +7,12 @@
   </rule>
 
   <rule name="FILE_NOT_PROCESSED">
-    <condition>not(/ProcessData/result/row)</condition>
+    <condition>string(/ProcessData/result/row/FILENAME/text()) != string(/ProcessData/current_filename/text())</condition>
   </rule>
 
   <sequence name="MainSequence">
 
+    <!-- Collect Files -->
     <operation name="CollectFiles">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
@@ -30,17 +31,21 @@
       </input>
     </operation>
 
+    <!-- Initialize counter -->
     <assign to="FSA_DocumentCount" from="count(//*[starts-with(name(),'FSA_Document')])"/>
     <assign to="FILE_COUNT">1</assign>
 
-    <!-- Fixed loop structure -->
-    <while condition="number(/ProcessData/FILE_COUNT) &lt;= number(/ProcessData/FSA_DocumentCount)">
-      <sequence name="ProcessFileLoop">
-        <!-- Directly get document metadata -->
+    <!-- Loop through all files -->
+    <repeat name="FileLoop" ref="HAS_MORE_FILES">
+      <sequence name="ProcessEachFile">
+
+        <!-- Select document -->
         <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT]/@SCIObjectID"/>
-        <assign to="current_filename" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT]/@DocumentName"/>
+        <assign to="DocumentName" from="/ProcessData/PrimaryDocument/DocumentName/text()"/>
+        <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
         <assign to="safe_filename" from="concat('sfg_log_', string(/ProcessData/FILE_COUNT), '.json')"/>
 
+        <!-- Check DB -->
         <operation name="CheckIfProcessed">
           <participant name="LightweightJDBCAdapterQuery"/>
           <output message="LightweightJDBCAdapterTypeInputMessage">
@@ -54,71 +59,79 @@
             <assign to="from">#</assign>
           </output>
           <input message="inmsg">
+            <assign to="." from="DocToDOM(PrimaryDocument)"/>
+          </input>
+        </operation>
+
+        <!-- Check if not processed -->
+        <rule ref="FILE_NOT_PROCESSED">
+          <condition>true</condition>
+        </rule>
+
+        <!-- Extract the file -->
+        <operation name="ExtractFile">
+          <participant name="E5FileSystem"/>
+          <output message="FileSystemInputMessage">
+            <assign to="Action">FS_EXTRACT</assign>
+            <assign to="assignedFilename" from="/ProcessData/safe_filename"/>
+            <assign to="extractionFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
+            <assign to="bootstrap">false</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="PrimaryDocument"/>
+          </input>
+        </operation>
+
+        <!-- Insert into DB -->
+        <operation name="InsertDB">
+          <participant name="LightweightJDBCAdapterQuery"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="param1" from="/ProcessData/current_filename"/>
+            <assign to="paramtype1">String</assign>
+            <assign to="pool">oraclePool</assign>
+            <assign to="query_type">OTHER</assign>
+            <assign to="sql">INSERT INTO process_logs (FILENAME) VALUES(?)</assign>
+            <assign to="from">#</assign>
+          </output>
+          <input message="inmsg">
             <assign to="." from="*"/>
           </input>
         </operation>
 
-        <!-- Proper choice structure -->
-        <choice name="IfNotProcessed">
-          <select>
-            <case ref="FILE_NOT_PROCESSED">
-              <sequence name="HandleNewFile">
-                <assign to="archive_filename" 
-                        from="concat(
-                                format-dateTime(current-dateTime(), 'yyyyMMdd_HHmmss_'), 
-                                /ProcessData/current_filename
-                              )"/>
+        <!-- Archive the file -->
+        <operation name="MoveFile">
+          <participant name="E5FileSystem"/>
+          <output message="FileSystemInputMessage">
+            <assign to="Action">FS_MOVE</assign>
+            <assign to="sourceFolder">/sfgdata/documents/s3temp</assign>
+            <assign to="targetFolder">/sfgdata/documents/archive</assign>
+            <assign to="filePattern" from="/ProcessData/current_filename"/>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"/>
+          </input>
+        </operation>
 
-                <operation name="ExtractFile">
-                  <participant name="E5FileSystem"/>
-                  <output message="FileSystemInputMessage">
-                    <assign to="Action">FS_EXTRACT</assign>
-                    <assign to="assignedFilename" from="/ProcessData/safe_filename"/>
-                    <assign to="extractionFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
-                    <assign to="bootstrap">false</assign>
-                  </output>
-                  <input message="inmsg">
-                    <assign to="." from="/ProcessData/PrimaryDocument"/>
-                  </input>
-                </operation>
-
-                <operation name="LogToDB">
-                  <participant name="LightweightJDBCAdapterQuery"/>
-                  <output message="LightweightJDBCAdapterTypeInputMessage">
-                    <assign to="param1" from="/ProcessData/current_filename"/>
-                    <assign to="paramtype1">String</assign>
-                    <assign to="pool">oraclePool</assign>
-                    <assign to="query_type">OTHER</assign>
-                    <assign to="sql">INSERT INTO process_logs (FILENAME) VALUES(?)</assign>
-                    <assign to="from">#</assign>
-                  </output>
-                  <input message="inmsg">
-                    <assign to="." from="*"/>
-                  </input>
-                </operation>
-
-                <operation name="ArchiveFile">
-                  <participant name="E5FileSystem"/>
-                  <output message="FileSystemInputMessage">
-                    <assign to="Action">FS_MOVE</assign>
-                    <assign to="sourceFolder">/sfgdata/documents/s3temp</assign>
-                    <assign to="sourceFilename" from="/ProcessData/current_filename"/>
-                    <assign to="targetFolder">/sfgdata/documents/archive</assign>
-                    <assign to="targetFilename" from="/ProcessData/archive_filename"/>
-                    <assign to="createFolder">true</assign>
-                  </output>
-                  <input message="inmsg">
-                    <assign to="." from="*"/>
-                  </input>
-                </operation>
-              </sequence>
-            </case>
-          </select>
-        </choice>
-
+        <!-- Increment FILE_COUNT -->
         <assign to="FILE_COUNT" from="number(/ProcessData/FILE_COUNT) + 1"/>
+
       </sequence>
-    </while>
+    </repeat>
+
+    <!-- Success flag -->
+    <operation name="WriteSuccessFlag">
+      <participant name="E5FileSystem"/>
+      <output message="FileSystemInputMessage">
+        <assign to="Action">FS_WRITE</assign>
+        <assign to="targetFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
+        <assign to="assignedFilename">success.flag</assign>
+        <assign to="fileContents">All files processed successfully</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+
   </sequence>
 
   <onFault>
@@ -127,7 +140,7 @@
         <participant name="BPLogger"/>
         <output message="BPLoggerMessage">
           <assign to="logLevel">ERROR</assign>
-          <assign to="message">Process Failed: [ErrorInfo]</assign>
+          <assign to="message">Process failed. See logs.</assign>
         </output>
         <input message="inmsg">
           <assign to="." from="*"/>
