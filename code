@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<process name="EDE_Cloudwatch_SingleFileProcess">
+<process name="EDE_Cloudwatch_FullSingleFileProcess">
 
   <rule name="FILE_NOT_PROCESSED">
     <condition>string(/ProcessData/result/row/FILENAME/text()) != string(/ProcessData/current_filename/text())</condition>
@@ -92,12 +92,14 @@
       </input>
     </operation>
 
-    <!-- Log completion -->
-    <operation name="LogSuccess">
-      <participant name="BPLogger"/>
-      <output message="BPLoggerMessage">
-        <assign to="logLevel">INFO</assign>
-        <assign to="message" from="concat('File processed and archived: ', /ProcessData/current_filename)"/>
+    <!-- STEP 4: Write Success Flag -->
+    <operation name="WriteSuccessFlag">
+      <participant name="E5FileSystem"/>
+      <output message="FileSystemInputMessage">
+        <assign to="Action">FS_WRITE</assign>
+        <assign to="targetFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
+        <assign to="assignedFilename">success.flag</assign>
+        <assign to="fileContents">File processed successfully</assign>
       </output>
       <input message="inmsg">
         <assign to="." from="*"/>
