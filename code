@@ -3,48 +3,52 @@
 
   <!-- Rules -->
   <rule name="HAS_MORE_FILES">
-    <condition>number(/ProcessData/FILE_COUNT) &lt; 5</condition>
+    <condition>number(/ProcessData/FILE_COUNT) &lt;= 5</condition>
   </rule>
 
-  <!-- You are only allowed ONE valid block after rules -->
-  <choice name="MainChoice">
-    <select>
-      <assign to="FILE_COUNT">1</assign>
-      <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
-    </select>
-  </choice>
+  <!-- VALID execution block: only one allowed -->
+  <sequence name="MainSequence">
 
-  <!-- Separate sequence for file processing -->
-  <sequence name="ProcessFile">
-    <operation name="LogFileCount">
+    <!-- Initialize a counter -->
+    <assign to="FILE_COUNT">1</assign>
+
+    <!-- Process a file -->
+    <operation name="LogStart">
       <participant name="BPLogger"/>
       <output message="BPLoggerMessage">
         <assign to="logLevel">INFO</assign>
-        <assign to="message" from="concat('Processing file #: ', /ProcessData/FILE_COUNT)"/>
+        <assign to="message" from="concat('Start processing file #', /ProcessData/FILE_COUNT)"/>
       </output>
       <input message="inmsg">
         <assign to="." from="*"/>
       </input>
     </operation>
 
+    <!-- Increment the counter -->
     <assign to="FILE_COUNT" from="number(/ProcessData/FILE_COUNT) + 1"/>
 
-    <!-- Repeat the loop -->
-    <choice name="RepeatLoop">
-      <select>
-        <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
-      </select>
-    </choice>
+    <!-- Just log success -->
+    <operation name="LogSuccess">
+      <participant name="BPLogger"/>
+      <output message="BPLoggerMessage">
+        <assign to="logLevel">INFO</assign>
+        <assign to="message">Finished processing.</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+
   </sequence>
 
-  <!-- Optional Error Handler -->
+  <!-- Fault block (optional) -->
   <onFault>
     <sequence name="ErrorHandler">
       <operation name="LogError">
         <participant name="BPLogger"/>
         <output message="BPLoggerMessage">
           <assign to="logLevel">ERROR</assign>
-          <assign to="message">BP Failed</assign>
+          <assign to="message">Something went wrong</assign>
         </output>
         <input message="inmsg">
           <assign to="." from="*"/>
