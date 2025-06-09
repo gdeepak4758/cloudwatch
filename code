@@ -6,25 +6,16 @@
     <condition>number(/ProcessData/FILE_COUNT) &lt; 5</condition>
   </rule>
 
-  <!-- Must start with ONE valid container -->
-  <sequence name="MainSequence">
+  <!-- You are only allowed ONE valid block after rules -->
+  <choice name="MainChoice">
+    <select>
+      <assign to="FILE_COUNT">1</assign>
+      <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
+    </select>
+  </choice>
 
-    <!-- Initialize -->
-    <assign to="FILE_COUNT">1</assign>
-
-    <!-- Loop control via choice -->
-    <choice name="LoopChoice">
-      <select>
-        <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
-      </select>
-    </choice>
-
-  </sequence>
-
-  <!-- This must be separately defined -->
+  <!-- Separate sequence for file processing -->
   <sequence name="ProcessFile">
-
-    <!-- Log File Count -->
     <operation name="LogFileCount">
       <participant name="BPLogger"/>
       <output message="BPLoggerMessage">
@@ -36,26 +27,24 @@
       </input>
     </operation>
 
-    <!-- Increment -->
     <assign to="FILE_COUNT" from="number(/ProcessData/FILE_COUNT) + 1"/>
 
-    <!-- Loop again if needed -->
-    <choice name="RepeatChoice">
+    <!-- Repeat the loop -->
+    <choice name="RepeatLoop">
       <select>
         <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
       </select>
     </choice>
-
   </sequence>
 
-  <!-- Optional error handler -->
+  <!-- Optional Error Handler -->
   <onFault>
     <sequence name="ErrorHandler">
       <operation name="LogError">
         <participant name="BPLogger"/>
         <output message="BPLoggerMessage">
           <assign to="logLevel">ERROR</assign>
-          <assign to="message">Business Process Failed</assign>
+          <assign to="message">BP Failed</assign>
         </output>
         <input message="inmsg">
           <assign to="." from="*"/>
