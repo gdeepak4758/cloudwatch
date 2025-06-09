@@ -7,7 +7,7 @@
   </rule>
 
   <rule name="FILE_NOT_PROCESSED">
-    <condition>string(/ProcessData/result/row/FILENAME/text()) != string(/ProcessData/current_filename/text())</condition>
+    <condition>not(/ProcessData/result/row)</condition>
   </rule>
 
   <sequence name="MainSequence">
@@ -42,9 +42,9 @@
   </sequence>
 
   <sequence name="ProcessFile">
+    <!-- Directly get document metadata -->
     <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT]/@SCIObjectID"/>
-    <assign to="DocumentName" from="/ProcessData/PrimaryDocument/DocumentName/text()"/>
-    <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
+    <assign to="current_filename" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT]/@DocumentName"/>
     <assign to="safe_filename" from="concat('sfg_log_', string(/ProcessData/FILE_COUNT), '.json')"/>
 
     <operation name="CheckIfProcessed">
@@ -60,7 +60,7 @@
         <assign to="from">#</assign>
       </output>
       <input message="inmsg">
-        <assign to="." from="DocToDOM(PrimaryDocument)"/>
+        <assign to="." from="*"/>
       </input>
     </operation>
 
@@ -80,6 +80,12 @@
   </sequence>
 
   <sequence name="HandleNewFile">
+    <assign to="archive_filename" 
+            from="concat(
+                    format-dateTime(current-dateTime(), 'yyyyMMdd_HHmmss_'), 
+                    /ProcessData/current_filename
+                  )"/>
+
     <operation name="ExtractFile">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
@@ -89,7 +95,7 @@
         <assign to="bootstrap">false</assign>
       </output>
       <input message="inmsg">
-        <assign to="." from="PrimaryDocument"/>
+        <assign to="." from="/ProcessData/PrimaryDocument"/>
       </input>
     </operation>
 
@@ -113,8 +119,10 @@
       <output message="FileSystemInputMessage">
         <assign to="Action">FS_MOVE</assign>
         <assign to="sourceFolder">/sfgdata/documents/s3temp</assign>
+        <assign to="sourceFilename" from="/ProcessData/current_filename"/>
         <assign to="targetFolder">/sfgdata/documents/archive</assign>
-        <assign to="filePattern" from="/ProcessData/current_filename"/>
+        <assign to="targetFilename" from="/ProcessData/archive_filename"/>
+        <assign to="createFolder">true</assign>
       </output>
       <input message="inmsg">
         <assign to="." from="*"/>
@@ -128,7 +136,7 @@
         <participant name="BPLogger"/>
         <output message="BPLoggerMessage">
           <assign to="logLevel">ERROR</assign>
-          <assign to="message">Process Failed. Check logs.</assign>
+          <assign to="message">Process Failed: [ErrorInfo]</assign>
         </output>
         <input message="inmsg">
           <assign to="." from="*"/>
