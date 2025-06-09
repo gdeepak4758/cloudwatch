@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<process name="EDE_Cloudwatch_CollectStep">
+<process name="EDE_Cloudwatch_CollectAndAssign">
 
   <rule name="FILE_NOT_PROCESSED">
     <condition>string(/ProcessData/result/row/FILENAME/text()) != string(/ProcessData/current_filename/text())</condition>
@@ -24,12 +24,22 @@
       </input>
     </operation>
 
-    <!-- Log collection complete -->
+    <!-- STEP 2: Count Documents -->
+    <assign to="FSA_DocumentCount" from="count(//*[starts-with(name(),'FSA_Document')])"/>
+    <assign to="FILE_COUNT">1</assign>
+
+    <!-- STEP 2: Assign first file -->
+    <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=1]/@SCIObjectID"/>
+    <assign to="DocumentName" from="/ProcessData/PrimaryDocument/DocumentName/text()"/>
+    <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
+    <assign to="safe_filename" from="concat('sfg_log_1.json')"/>
+
+    <!-- Log assignment complete -->
     <operation name="LogInfo">
       <participant name="BPLogger"/>
       <output message="BPLoggerMessage">
         <assign to="logLevel">INFO</assign>
-        <assign to="message">File collection complete.</assign>
+        <assign to="message" from="concat('File assigned: ', /ProcessData/current_filename)"/>
       </output>
       <input message="inmsg">
         <assign to="." from="*"/>
