@@ -2,19 +2,19 @@
 <process name="EDE_Cloudwatch_Deliver_Logs">
 
   <!-- Rules -->
-  <rule name="FILE_CONDITION">
+  <rule name="HAS_MORE_FILES">
     <condition>number(/ProcessData/FILE_COUNT) &lt;= number(/ProcessData/FSA_DocumentCount)</condition>
   </rule>
 
-  <rule name="FILE_Check">
+  <rule name="FILE_NOT_PROCESSED">
     <condition>string(/ProcessData/result/row/FILENAME/text()) != string(/ProcessData/current_filename/text())</condition>
   </rule>
 
   <!-- Main Sequence -->
-  <sequence name="Sequence Start">
+  <sequence name="MainProcess">
 
-    <!-- Collect files -->
-    <operation name="Collect Files">
+    <!-- Step 1: Collect files -->
+    <operation name="CollectFiles">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
         <assign to="." from="*"/>
@@ -32,119 +32,124 @@
       </input>
     </operation>
 
-    <!-- Initialize counters -->
+    <!-- Step 2: Initialize counters -->
     <assign to="FSA_DocumentCount" from="count(//*[starts-with(name(),'FSA_Document')])"/>
     <assign to="FILE_COUNT">1</assign>
 
-    <!-- Repeat for each file -->
-    <repeat name="RepeatFiles" ref="FILE_CONDITION">
-      <sequence name="ProcessEachFile">
+    <!-- Step 3: File Processing Loop -->
+    <choice name="FileProcessingLoop">
+      <select>
+        <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
+      </select>
+    </choice>
 
-        <choice name="CheckDocExists">
-          <select>
-            <case ref="FILE_CONDITION" activity="ContinueProcess"/>
-          </select>
+    <sequence name="ProcessFile">
 
-          <sequence name="ContinueProcess">
-            <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIObjectID"/>
-            <assign to="DocumentName" from="/ProcessData/PrimaryDocument/DocumentName/text()"/>
-            <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
-            <assign to="safe_filename" from="concat('sfg_log_', string(/ProcessData/FILE_COUNT), '.json')"/>
+      <!-- Get document details -->
+      <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT]/@SCIObjectID"/>
+      <assign to="DocumentName" from="/ProcessData/PrimaryDocument/DocumentName/text()"/>
+      <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
+      <assign to="safe_filename" from="concat('sfg_log_', string(/ProcessData/FILE_COUNT), '.json')"/>
 
-            <!-- DB Check -->
-            <operation name="Check DB for Duplicate">
-              <participant name="LightweightJDBCAdapterQuery"/>
-              <output message="LightweightJDBCAdapterTypeInputMessage">
-                <assign to="param1" from="/ProcessData/current_filename"/>
-                <assign to="paramtype1">String</assign>
-                <assign to="pool">oraclePool</assign>
-                <assign to="query_type">SELECT</assign>
-                <assign to="row_name">row</assign>
-                <assign to="result_name">result</assign>
-                <assign to="sql">SELECT FILENAME FROM process_logs WHERE TRIM(LOWER(FILENAME)) = TRIM(LOWER(?))</assign>
-                <assign to="from">#</assign>
-              </output>
-              <input message="inmsg">
-                <assign to="." from="DocToDOM(PrimaryDocument)"/>
-              </input>
-            </operation>
+      <!-- DB Check -->
+      <operation name="CheckIfAlreadyProcessed">
+        <participant name="LightweightJDBCAdapterQuery"/>
+        <output message="LightweightJDBCAdapterTypeInputMessage">
+          <assign to="param1" from="/ProcessData/current_filename"/>
+          <assign to="paramtype1">String</assign>
+          <assign to="pool">oraclePool</assign>
+          <assign to="query_type">SELECT</assign>
+          <assign to="row_name">row</assign>
+          <assign to="result_name">result</assign>
+          <assign to="sql">SELECT FILENAME FROM process_logs WHERE TRIM(LOWER(FILENAME)) = TRIM(LOWER(?))</assign>
+          <assign to="from">#</assign>
+        </output>
+        <input message="inmsg">
+          <assign to="." from="DocToDOM(PrimaryDocument)"/>
+        </input>
+      </operation>
 
-            <!-- Only if not already processed -->
-            <choice name="CheckIfAlreadyProcessed">
-              <select>
-                <case ref="FILE_Check" activity="NotProcessed"/>
-              </select>
+      <!-- Process if not already in DB -->
+      <choice name="CheckIfNewFile">
+        <select>
+          <case ref="FILE_NOT_PROCESSED" activity="ProcessNewFile"/>
+        </select>
+      </choice>
 
-              <sequence name="NotProcessed">
+      <sequence name="ProcessNewFile">
 
-                <operation name="Log Processing Start">
-                  <participant name="BPLogger"/>
-                  <output message="BPLoggerMessage">
-                    <assign to="logLevel">DEBUG</assign>
-                    <assign to="message" from="concat('Processing file: ', /ProcessData/current_filename)"/>
-                  </output>
-                  <input message="inmsg">
-                    <assign to="." from="*"/>
-                  </input>
-                </operation>
+        <!-- Log start -->
+        <operation name="LogStart">
+          <participant name="BPLogger"/>
+          <output message="BPLoggerMessage">
+            <assign to="logLevel">DEBUG</assign>
+            <assign to="message" from="concat('Processing file: ', /ProcessData/current_filename)"/>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"/>
+          </input>
+        </operation>
 
-                <!-- Extract file -->
-                <operation name="Extract File">
-                  <participant name="E5FileSystem"/>
-                  <output message="FileSystemInputMessage">
-                    <assign to="Action">FS_EXTRACT</assign>
-                    <assign to="assignedFilename" from="/ProcessData/safe_filename"/>
-                    <assign to="extractionFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
-                    <assign to="bootstrap">false</assign>
-                  </output>
-                  <input message="inmsg">
-                    <assign to="." from="PrimaryDocument"/>
-                  </input>
-                </operation>
+        <!-- Extract -->
+        <operation name="ExtractFile">
+          <participant name="E5FileSystem"/>
+          <output message="FileSystemInputMessage">
+            <assign to="Action">FS_EXTRACT</assign>
+            <assign to="assignedFilename" from="/ProcessData/safe_filename"/>
+            <assign to="extractionFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
+            <assign to="bootstrap">false</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="PrimaryDocument"/>
+          </input>
+        </operation>
 
-                <!-- Log to DB -->
-                <operation name="Insert DB Log">
-                  <participant name="LightweightJDBCAdapterQuery"/>
-                  <output message="LightweightJDBCAdapterTypeInputMessage">
-                    <assign to="param1" from="/ProcessData/current_filename"/>
-                    <assign to="paramtype1">String</assign>
-                    <assign to="pool">oraclePool</assign>
-                    <assign to="query_type">OTHER</assign>
-                    <assign to="sql">INSERT INTO process_logs (FILENAME) VALUES(?)</assign>
-                    <assign to="from">#</assign>
-                  </output>
-                  <input message="inmsg">
-                    <assign to="." from="*"/>
-                  </input>
-                </operation>
+        <!-- Insert into DB -->
+        <operation name="InsertDBLog">
+          <participant name="LightweightJDBCAdapterQuery"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="param1" from="/ProcessData/current_filename"/>
+            <assign to="paramtype1">String</assign>
+            <assign to="pool">oraclePool</assign>
+            <assign to="query_type">OTHER</assign>
+            <assign to="sql">INSERT INTO process_logs (FILENAME) VALUES(?)</assign>
+            <assign to="from">#</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"/>
+          </input>
+        </operation>
 
-                <!-- Archive file -->
-                <operation name="Archive File">
-                  <participant name="E5FileSystem"/>
-                  <output message="FileSystemInputMessage">
-                    <assign to="Action">FS_MOVE</assign>
-                    <assign to="sourceFolder">/sfgdata/documents/s3temp</assign>
-                    <assign to="targetFolder">/sfgdata/documents/archive</assign>
-                    <assign to="filePattern" from="/ProcessData/current_filename"/>
-                  </output>
-                  <input message="inmsg">
-                    <assign to="." from="*"/>
-                  </input>
-                </operation>
-
-              </sequence>
-            </choice>
-          </sequence>
-        </choice>
-
-        <!-- Increment counter -->
-        <assign to="FILE_COUNT" from="number(/ProcessData/FILE_COUNT) + 1"/>
+        <!-- Move to archive -->
+        <operation name="ArchiveFile">
+          <participant name="E5FileSystem"/>
+          <output message="FileSystemInputMessage">
+            <assign to="Action">FS_MOVE</assign>
+            <assign to="sourceFolder">/sfgdata/documents/s3temp</assign>
+            <assign to="targetFolder">/sfgdata/documents/archive</assign>
+            <assign to="filePattern" from="/ProcessData/current_filename"/>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"/>
+          </input>
+        </operation>
 
       </sequence>
-    </repeat>
 
-    <!-- Write final success flag -->
-    <operation name="Write Success Flag">
+      <!-- Increment FILE_COUNT -->
+      <assign to="FILE_COUNT" from="number(/ProcessData/FILE_COUNT) + 1"/>
+
+      <!-- Loop again -->
+      <choice name="RepeatLoop">
+        <select>
+          <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
+        </select>
+      </choice>
+
+    </sequence>
+
+    <!-- Step 4: Write success flag -->
+    <operation name="WriteSuccessFlag">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
         <assign to="Action">FS_WRITE</assign>
@@ -161,8 +166,8 @@
 
   <!-- Error Handling -->
   <onFault>
-    <sequence name="FaultHandler">
-      <operation name="Log Error">
+    <sequence name="ErrorHandler">
+      <operation name="LogError">
         <participant name="BPLogger"/>
         <output message="BPLoggerMessage">
           <assign to="logLevel">ERROR</assign>
