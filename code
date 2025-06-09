@@ -1,60 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<process name="EDE_Cloudwatch_Deliver_Logs">
+<process name="EDE_Cloudwatch_MinimalTest">
 
-  <!-- Rules -->
-  <rule name="HAS_MORE_FILES">
-    <condition>number(/ProcessData/FILE_COUNT) &lt;= 5</condition>
-  </rule>
-
-  <!-- VALID execution block: only one allowed -->
-  <sequence name="MainSequence">
-
-    <!-- Initialize a counter -->
-    <assign to="FILE_COUNT">1</assign>
-
-    <!-- Process a file -->
-    <operation name="LogStart">
-      <participant name="BPLogger"/>
-      <output message="BPLoggerMessage">
-        <assign to="logLevel">INFO</assign>
-        <assign to="message" from="concat('Start processing file #', /ProcessData/FILE_COUNT)"/>
-      </output>
-      <input message="inmsg">
-        <assign to="." from="*"/>
-      </input>
-    </operation>
-
-    <!-- Increment the counter -->
-    <assign to="FILE_COUNT" from="number(/ProcessData/FILE_COUNT) + 1"/>
-
-    <!-- Just log success -->
-    <operation name="LogSuccess">
-      <participant name="BPLogger"/>
-      <output message="BPLoggerMessage">
-        <assign to="logLevel">INFO</assign>
-        <assign to="message">Finished processing.</assign>
-      </output>
-      <input message="inmsg">
-        <assign to="." from="*"/>
-      </input>
-    </operation>
-
-  </sequence>
-
-  <!-- Fault block (optional) -->
-  <onFault>
-    <sequence name="ErrorHandler">
-      <operation name="LogError">
-        <participant name="BPLogger"/>
-        <output message="BPLoggerMessage">
-          <assign to="logLevel">ERROR</assign>
-          <assign to="message">Something went wrong</assign>
-        </output>
-        <input message="inmsg">
-          <assign to="." from="*"/>
-        </input>
-      </operation>
-    </sequence>
-  </onFault>
+  <operation name="JustLog">
+    <participant name="BPLogger"/>
+    <output message="BPLoggerMessage">
+      <assign to="logLevel">INFO</assign>
+      <assign to="message">This is a minimal valid BPML log message.</assign>
+    </output>
+    <input message="inmsg">
+      <assign to="." from="*"/>
+    </input>
+  </operation>
 
 </process>
