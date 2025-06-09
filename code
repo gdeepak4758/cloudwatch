@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<process name="EDE_Cloudwatch_Choice_Corrected">
+<process name="EDE_Cloudwatch_FinalValid_Choice">
 
   <rule name="FILE_NOT_PROCESSED">
     <condition>not(string(/ProcessData/result/row/FILENAME))</condition>
@@ -7,7 +7,7 @@
 
   <sequence name="MainSequence">
 
-    <!-- STEP 1: Collect Files -->
+    <!-- Collect Files -->
     <operation name="CollectFiles">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
@@ -22,7 +22,7 @@
       <input message="inmsg"><assign to="." from="*"/></input>
     </operation>
 
-    <!-- STEP 2: Count and Assign -->
+    <!-- Count and Assign -->
     <assign to="FSA_DocumentCount" from="count(//*[starts-with(name(),'FSA_Document')])"/>
     <assign to="FILE_COUNT">1</assign>
     <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=1]/@SCIObjectID"/>
@@ -30,7 +30,7 @@
     <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
     <assign to="safe_filename" from="concat('sfg_log_1.json')"/>
 
-    <!-- STEP 3: DB Check -->
+    <!-- DB Check -->
     <operation name="CheckIfProcessed">
       <participant name="LightweightJDBCAdapterQuery"/>
       <output message="LightweightJDBCAdapterTypeInputMessage">
@@ -46,16 +46,27 @@
       <input message="inmsg"><assign to="." from="DocToDOM(PrimaryDocument)"/></input>
     </operation>
 
-    <!-- STEP 4: Conditional Logic -->
+    <!-- Conditional Logic with fallback -->
     <choice name="ProcessNewFile">
       <select>
         <case ref="FILE_NOT_PROCESSED" activity="ProcessNew"/>
       </select>
+
+      <!-- Fallback: log skip -->
+      <operation name="SkipFile">
+        <participant name="BPLogger"/>
+        <output message="BPLoggerMessage">
+          <assign to="logLevel">INFO</assign>
+          <assign to="message" from="concat('Skipping already processed file: ', /ProcessData/current_filename)"/>
+        </output>
+        <input message="inmsg"><assign to="." from="*"/></input>
+      </operation>
     </choice>
 
+    <!-- Process new file -->
     <sequence name="ProcessNew">
 
-      <!-- Extract File -->
+      <!-- Extract -->
       <operation name="ExtractFile">
         <participant name="E5FileSystem"/>
         <output message="FileSystemInputMessage">
@@ -67,7 +78,7 @@
         <input message="inmsg"><assign to="." from="PrimaryDocument"/></input>
       </operation>
 
-      <!-- Insert Log into DB -->
+      <!-- Insert to DB -->
       <operation name="InsertLog">
         <participant name="LightweightJDBCAdapterQuery"/>
         <output message="LightweightJDBCAdapterTypeInputMessage">
@@ -81,7 +92,7 @@
         <input message="inmsg"><assign to="." from="*"/></input>
       </operation>
 
-      <!-- Archive File -->
+      <!-- Move to archive -->
       <operation name="ArchiveFile">
         <participant name="E5FileSystem"/>
         <output message="FileSystemInputMessage">
@@ -95,7 +106,7 @@
 
     </sequence>
 
-    <!-- STEP 5: Write Success Flag -->
+    <!-- Write success flag -->
     <operation name="WriteSuccessFlag">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
