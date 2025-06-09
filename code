@@ -1,48 +1,61 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <process name="EDE_Cloudwatch_Deliver_Logs">
 
+  <!-- Rules -->
   <rule name="HAS_MORE_FILES">
     <condition>number(/ProcessData/FILE_COUNT) &lt; 5</condition>
   </rule>
 
+  <!-- Must start with ONE valid container -->
   <sequence name="MainSequence">
+
+    <!-- Initialize -->
     <assign to="FILE_COUNT">1</assign>
 
-    <choice name="LoopStart">
+    <!-- Loop control via choice -->
+    <choice name="LoopChoice">
       <select>
         <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
       </select>
     </choice>
+
   </sequence>
 
+  <!-- This must be separately defined -->
   <sequence name="ProcessFile">
+
+    <!-- Log File Count -->
     <operation name="LogFileCount">
       <participant name="BPLogger"/>
       <output message="BPLoggerMessage">
         <assign to="logLevel">INFO</assign>
-        <assign to="message" from="concat('Processing file #', /ProcessData/FILE_COUNT)"/>
+        <assign to="message" from="concat('Processing file #: ', /ProcessData/FILE_COUNT)"/>
       </output>
       <input message="inmsg">
         <assign to="." from="*"/>
       </input>
     </operation>
 
+    <!-- Increment -->
     <assign to="FILE_COUNT" from="number(/ProcessData/FILE_COUNT) + 1"/>
 
-    <choice name="RepeatLoop">
+    <!-- Loop again if needed -->
+    <choice name="RepeatChoice">
       <select>
         <case ref="HAS_MORE_FILES" activity="ProcessFile"/>
       </select>
     </choice>
+
   </sequence>
 
+  <!-- Optional error handler -->
   <onFault>
     <sequence name="ErrorHandler">
       <operation name="LogError">
         <participant name="BPLogger"/>
         <output message="BPLoggerMessage">
           <assign to="logLevel">ERROR</assign>
-          <assign to="message">BP Failed</assign>
+          <assign to="message">Business Process Failed</assign>
         </output>
         <input message="inmsg">
           <assign to="." from="*"/>
