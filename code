@@ -1,6 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <process name="testing_LJDBC">
-
   <rule name="FILE_CONDITION">
     <condition>number(//FILE_COUNT/text()) &lt;= number(//FSA_DocumentCount/text())</condition>
   </rule>
@@ -10,9 +8,7 @@
   </rule>
 
   <sequence name="Sequence Start">
-
-    <!-- Collect Files -->
-    <operation name="Collect Files">
+    <operation name="File System Adapter">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
         <assign to="Action">FS_COLLECT</assign>
@@ -24,9 +20,12 @@
         <assign to="maxThreads">10</assign>
         <assign to="collectMultiple">true</assign>
       </output>
-      <input message="inmsg"><assign to="." from="*"/></input>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
     </operation>
 
+    
     <assign to="FILE_COUNT">1</assign>
 
     <choice name="Condition">
@@ -35,12 +34,10 @@
       </select>
 
       <sequence name="PJ">
-
-        <!-- Set Primary Document -->
-        <assign to="PrimaryDocument" from="//*[starts-with(name(), 'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIObjectID"/>
-
-        <!-- Get Document Info -->
-        <operation name="Get Document Info">
+	  
+	    <assign name="Assign" to="PrimaryDocument" from="//*[starts-with(name(),&apos;FSA_Document&apos;)][position()=/ProcessData/FILE_COUNT/text()]/@SCIObjectID"></assign>
+		
+        <operation name="Get Document Information Service">
           <participant name="GetDocumentInfoService"/>
           <output message="GetDocumentInfoServiceTypeInputMessage">
             <assign to="." from="*"/>
@@ -50,22 +47,26 @@
           </input>
         </operation>
 
+      
         <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
-
-        <!-- Check DB for Filename -->
-        <operation name="Check DB">
-          <participant name="LightweightJDBCAdapterQuery"/>
-          <output message="LightweightJDBCAdapterTypeInputMessage">
-            <assign to="param1" from="/ProcessData/current_filename/text()"/>
-            <assign to="paramtype1">String</assign>
-            <assign to="pool">oraclePool</assign>
-            <assign to="query_type">SELECT</assign>
-            <assign to="result_name">result</assign>
-            <assign to="row_name">ENVELOPE</assign>
-            <assign to="sql">SELECT * FROM FILENAMES WHERE CURRENT_FILENAME LIKE ?</assign>
-          </output>
-          <input message="inmsg"><assign to="." from="DocToDOM(PrimaryDocument)"/></input>
-        </operation>
+		
+		<operation name="LightweightJDBCAdapterType">
+      <participant name="LightweightJDBCAdapterQuery"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+	  <assign to="." from="*"></assign>       
+        <assign to="param1" from="/ProcessData/current_filename/text()"></assign>       
+        <assign to="paramtype1">String</assign>
+        <assign to="pool">oraclePool</assign>
+        <assign to="query_type">SELECT</assign>
+        <assign to="result_name">result</assign>
+        <assign to="row_name">ENVELOPE</assign>
+        <assign to="sql">select * from FILENAMES where CURRENT_FILENAME like ?</assign>
+        <assign to="." from="*"></assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="DocToDOM(PrimaryDocument)"></assign>
+      </input>
+    </operation>
 
         <choice name="Condition1">
           <select>
@@ -73,66 +74,71 @@
           </select>
 
           <sequence name="PR">
+		  
+           <assign name="Assign" to="PrimaryDocument" from="//*[starts-with(name(),&apos;FSA_Document&apos;)][position()=/ProcessData/FILE_COUNT/text()]/@SCIObjectID"></assign>
+			
+			 <operation name="File System Adapter">
+          <participant name="E5FileSystem"/>
+          <output message="FileSystemInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="Action">FS_EXTRACT</assign>
+            <assign to="bootstrap">false</assign>
+            <assign to="extractionFolder">/software/data/mysftpuser/upload/Test/Inbound/Test</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
 
-            <assign to="PrimaryDocument" from="//*[starts-with(name(), 'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIObjectID"/>
-
-            <!-- Extract File -->
-            <operation name="Extract File">
-              <participant name="E5FileSystem"/>
-              <output message="FileSystemInputMessage">
-                <assign to="Action">FS_EXTRACT</assign>
-                <assign to="bootstrap">false</assign>
-                <assign to="extractionFolder">/software/data/mysftpuser/upload/Test/Inbound/Test</assign>
-              </output>
-              <input message="inmsg"><assign to="." from="*"/></input>
-            </operation>
-
-            <!-- Insert into DB -->
-            <operation name="Insert DB">
-              <participant name="LightweightJDBCAdapterQuery"/>
-              <output message="LightweightJDBCAdapterTypeInputMessage">
-                <assign to="param1" from="/ProcessData/current_filename/text()"/>
-                <assign to="paramtype1">String</assign>
-                <assign to="pool">oraclePool</assign>
-                <assign to="query_type">INSERT</assign>
-                <assign to="sql">INSERT INTO FILENAMES(Current_Filename) VALUES(?)</assign>
-              </output>
-              <input message="inmsg"><assign to="." from="*"/></input>
-            </operation>
-
+            <operation name="Lightweight JDBC Adapter">
+      <participant name="LightweightJDBCAdapterQuery"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+        <assign to="." from="*"></assign>       
+        <assign to="param1" from="/ProcessData/current_filename/text()"></assign>       
+        <assign to="paramtype1">String</assign>
+        <assign to="pool">oraclePool</assign>
+        <assign to="query_type">INSERT</assign>
+        <assign to="result_name">result</assign>
+        <assign to="row_name">row</assign>
+        <assign to="sql">INSERT INTO FILENAMES(Current_Filename) VALUES(?)</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+	
           </sequence>
-
-          <!-- Release if skipped -->
-          <operation name="Release Unprocessed">
-            <participant name="ReleaseService"/>
-            <output message="ReleaseServiceTypeInputMessage">
-              <assign to="TARGET">/ProcessData/PrimaryDocument | /ProcessData/current_filename | /ProcessData/result/row/FILENAME | /ProcessData/DocumentName</assign>
-              <assign to="." from="*"/>
-            </output>
-            <input message="inmsg"><assign to="." from="*"/></input>
-          </operation>
-
+		  
+		  <operation name="Release Service">
+      <participant name="ReleaseService"/>
+      <output message="ReleaseServiceTypeInputMessage">
+        <assign to="TARGET">/ProcessData/PrimaryDocument |/ProcessData/current_filename | /ProcessData/result/row/FILENAME | /ProcessData/DocumentName</assign>
+		<assign to="." from="*"/>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+		  
         </choice>
 
-        <!-- Increment and Repeat -->
         <assign to="FILE_COUNT" from="FILE_COUNT+1"/>
         <repeat name="Repeat" ref="Condition"/>
-
       </sequence>
     </choice>
 
-    <!-- Final Release -->
-    <operation name="Final Release">
+    <operation name="Release Service">
       <participant name="ReleaseService"/>
       <output message="ReleaseServiceTypeInputMessage">
-        <assign to="TARGET">/ProcessData/PrimaryDocument | /ProcessData/current_filename | /ProcessData/result/row/FILENAME | /ProcessData/DocumentName</assign>
-        <assign to="." from="*"/>
+        <assign to="TARGET">/ProcessData/PrimaryDocument |/ProcessData/current_filename | /ProcessData/result/row/FILENAME | /ProcessData/DocumentName</assign>
+		<assign to="." from="*"/>
       </output>
-      <input message="inmsg"><assign to="." from="*"/></input>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
     </operation>
 
-    <!-- Collect & Concatenate -->
-    <operation name="Collect Again">
+    <operation name="File System Adapter">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
         <assign to="Action">FS_COLLECT</assign>
@@ -143,24 +149,27 @@
         <assign to="thresholdWait">true</assign>
         <assign to="maxThreads">10</assign>
         <assign to="collectMultiple">true</assign>
-        <assign to="concatenateFiles">true</assign>
+		<assign to="concatenateFiles">true</assign>
       </output>
-      <input message="inmsg"><assign to="." from="*"/></input>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
     </operation>
 
     <assign to="SFG_logs" from="concat('sfg_logs_', '.', '.', '.json')"/>
 
-    <!-- Final Extract -->
-    <operation name="Final Extract">
+    <operation name="File System Adapter">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
+            <assign to="." from="*"></assign>
         <assign to="Action">FS_EXTRACT</assign>
         <assign to="assignedFilename" from="/ProcessData/SFG_logs/text()"/>
         <assign to="bootstrap">false</assign>
         <assign to="extractionFolder">/software/data/mysftpuser/upload/Test/Inbound/Test 2</assign>
       </output>
-      <input message="inmsg"><assign to="." from="*"/></input>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
     </operation>
-
   </sequence>
 </process>
