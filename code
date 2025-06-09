@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <process name="EDE_Cloudwatch_Deliver_Logs">
 
-  <!-- Rule to control repeat loop -->
+  <!-- Rules -->
   <rule name="FILE_CONDITION">
     <condition>number(/ProcessData/FILE_COUNT) &lt;= number(/ProcessData/FSA_DocumentCount)</condition>
   </rule>
 
-  <!-- Rule to check if file already exists in DB -->
   <rule name="FILE_Check">
     <condition>string(/ProcessData/result/row/FILENAME/text()) != string(/ProcessData/current_filename/text())</condition>
   </rule>
 
+  <!-- Main Sequence -->
   <sequence name="Sequence Start">
 
     <!-- Collect files -->
-    <operation name="File System Adapter">
+    <operation name="Collect Files">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
         <assign to="." from="*"/>
@@ -36,11 +36,10 @@
     <assign to="FSA_DocumentCount" from="count(//*[starts-with(name(),'FSA_Document')])"/>
     <assign to="FILE_COUNT">1</assign>
 
-    <!-- Repeat loop -->
+    <!-- Repeat for each file -->
     <repeat name="RepeatFiles" ref="FILE_CONDITION">
       <sequence name="ProcessEachFile">
 
-        <!-- Defensive assignment of PrimaryDocument -->
         <choice name="CheckDocExists">
           <select>
             <case ref="FILE_CONDITION" activity="ContinueProcess"/>
@@ -50,12 +49,10 @@
             <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIObjectID"/>
             <assign to="DocumentName" from="/ProcessData/PrimaryDocument/DocumentName/text()"/>
             <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
-
-            <!-- Sanitize filename -->
             <assign to="safe_filename" from="concat('sfg_log_', string(/ProcessData/FILE_COUNT), '.json')"/>
 
             <!-- DB Check -->
-            <operation name="Lightweight JDBC Adapter">
+            <operation name="Check DB for Duplicate">
               <participant name="LightweightJDBCAdapterQuery"/>
               <output message="LightweightJDBCAdapterTypeInputMessage">
                 <assign to="param1" from="/ProcessData/current_filename"/>
@@ -72,6 +69,7 @@
               </input>
             </operation>
 
+            <!-- Only if not already processed -->
             <choice name="CheckIfAlreadyProcessed">
               <select>
                 <case ref="FILE_Check" activity="NotProcessed"/>
@@ -79,17 +77,19 @@
 
               <sequence name="NotProcessed">
 
-                <!-- Log start -->
-                <operation name="BPLogger">
+                <operation name="Log Processing Start">
                   <participant name="BPLogger"/>
                   <output message="BPLoggerMessage">
                     <assign to="logLevel">DEBUG</assign>
                     <assign to="message" from="concat('Processing file: ', /ProcessData/current_filename)"/>
                   </output>
+                  <input message="inmsg">
+                    <assign to="." from="*"/>
+                  </input>
                 </operation>
 
                 <!-- Extract file -->
-                <operation name="File System Adapter">
+                <operation name="Extract File">
                   <participant name="E5FileSystem"/>
                   <output message="FileSystemInputMessage">
                     <assign to="Action">FS_EXTRACT</assign>
@@ -103,7 +103,7 @@
                 </operation>
 
                 <!-- Log to DB -->
-                <operation name="Lightweight JDBC Adapter">
+                <operation name="Insert DB Log">
                   <participant name="LightweightJDBCAdapterQuery"/>
                   <output message="LightweightJDBCAdapterTypeInputMessage">
                     <assign to="param1" from="/ProcessData/current_filename"/>
@@ -118,8 +118,8 @@
                   </input>
                 </operation>
 
-                <!-- Archive original file -->
-                <operation name="File System Adapter">
+                <!-- Archive file -->
+                <operation name="Archive File">
                   <participant name="E5FileSystem"/>
                   <output message="FileSystemInputMessage">
                     <assign to="Action">FS_MOVE</assign>
@@ -139,11 +139,12 @@
 
         <!-- Increment counter -->
         <assign to="FILE_COUNT" from="number(/ProcessData/FILE_COUNT) + 1"/>
+
       </sequence>
     </repeat>
 
-    <!-- Optional: final flag file -->
-    <operation name="File System Adapter">
+    <!-- Write final success flag -->
+    <operation name="Write Success Flag">
       <participant name="E5FileSystem"/>
       <output message="FileSystemInputMessage">
         <assign to="Action">FS_WRITE</assign>
@@ -158,15 +159,18 @@
 
   </sequence>
 
-  <!-- Error handling -->
+  <!-- Error Handling -->
   <onFault>
     <sequence name="FaultHandler">
-      <operation name="BPLogger">
+      <operation name="Log Error">
         <participant name="BPLogger"/>
         <output message="BPLoggerMessage">
           <assign to="logLevel">ERROR</assign>
           <assign to="message">Business Process Failed. Check logs for details.</assign>
         </output>
+        <input message="inmsg">
+          <assign to="." from="*"/>
+        </input>
       </operation>
     </sequence>
   </onFault>
