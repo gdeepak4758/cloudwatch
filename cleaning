@@ -1,0 +1,37 @@
+ <process name="Cleaning_up_past_data">
+ <sequence name="Sequence Start">
+ 
+ <operation name="Timestamp Utility">
+      <participant name="TimestampUtilService"/>
+      <output message="xout">
+        <assign to="action">format</assign>
+        <assign to="baseTime" from="&apos;now&apos;"></assign>
+        <assign to="format">yyyyMMdd</assign>
+      </output>
+      <input message="in">
+        <assign to="." from="formattedTime"></assign>
+      </input>
+    </operation>
+	
+	<assign to="Time" from="number(/ProcessData/formattedTime/text())-1"/>
+	
+	
+    <operation name="File System Adapter">
+      <participant name="CopyOffilesystem"/>
+      <output message="FileSystemInputMessage">
+        <assign to="Action">FS_COLLECT</assign>
+        <assign to="bootstrap">false</assign>
+		<assign to="filter">*_/ProcessData/Time.json</assign>
+        <assign to="collectionFolder">/software/data/mysftpuser/upload/Test/Inbound/Demo</assign>
+        <assign to="fileModTimeThreshold">10</assign>
+        <assign to="thresholdWait">true</assign>
+        <assign to="maxThreads">10</assign>
+        <assign to="collectMultiple">true</assign>
+		<assign to="deleteAfterCollect">true</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+</sequence>
+</process>
