@@ -1,0 +1,16 @@
+<!-- Step 3: Send to New Relic using HTTP Client Adapter -->
+    <operation name="HTTPClientBeginSession">
+      <participant name="HTTPClientAdapter"/>
+      <output message="HTTPClientRequest">
+        <assign to="URL">https://metric-api.newrelic.com/metric/v1</assign>
+        <assign to="Method">POST</assign>
+        <assign to="Headers">
+          Api-Key: NRAK-xxxxxxx
+          Content-Type: application/json
+        </assign>
+        <assign to="Payload">statusPayload</assign>
+      </output>
+      <input message="HTTPClientResponse"/>
+    </operation>
+  </sequence>
+</process>
