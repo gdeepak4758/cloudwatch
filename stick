@@ -1,0 +1,93 @@
+Prerequisites
+•  Install Libraries: Run pip install numpy pandas yfinance tensorflow scikit-learn requests in your Python environment.
+•  Alpha Vantage API Key: Sign up for a free API key at Alpha Vantage.
+•  Basic Python Knowledge: You’ll need to run this in a Jupyter Notebook or Python IDE.
+Robust Stock Price Prediction Code
+
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+import requests
+import matplotlib.pyplot as plt
+
+# 1. Fetch stock data (using yfinance for simplicity; Alpha Vantage alternative below)
+stock_symbol = "AAPL"  # Change to any stock ticker (e.g., TSLA, MSFT)
+data = yf.download(stock_symbol, start="2020-01-01", end="2025-07-01", interval="1d")
+
+# 2. Prepare data (use 'Close' price for prediction)
+prices = data['Close'].values.reshape(-1, 1)
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_prices = scaler.fit_transform(prices)
+
+# Create sequences for LSTM (e.g., use past 60 days to predict next day)
+def create_sequences(data, seq_length):
+    X, y = [], []
+    for i in range(len(data) - seq_length):
+        X.append(data[i:i + seq_length])
+        y.append(data[i + seq_length])
+    return np.array(X), np.array(y)
+
+seq_length = 60
+X, y = create_sequences(scaled_prices, seq_length)
+
+# Split into train and test sets (80% train, 20% test)
+train_size = int(len(X) * 0.8)
+X_train, X_test = X[:train_size], X[train_size:]
+y_train, y_test = y[:train_size], y[train_size:]
+
+# 3. Build LSTM model
+model = Sequential([
+    LSTM(50, return_sequences=True, input_shape=(seq_length, 1)),
+    Dropout(0.2),
+    LSTM(50),
+    Dropout(0.2),
+    Dense(25),
+    Dense(1)
+])
+
+model.compile(optimizer='adam', loss='mse')
+
+# 4. Train model
+model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_test, y_test), verbose=1)
+
+# 5. Predict future price (next day)
+last_sequence = scaled_prices[-seq_length:].reshape(1, seq_length, 1)
+predicted_price_scaled = model.predict(last_sequence)
+predicted_price = scaler.inverse_transform(predicted_price_scaled)[0][0]
+
+print(f"Predicted next day price for {stock_symbol}: ${predicted_price:.2f}")
+
+# 6. Plot actual vs. predicted (optional)
+predicted = model.predict(X_test)
+predicted = scaler.inverse_transform(predicted)
+actual = scaler.inverse_transform(y_test)
+
+plt.plot(actual, label='Actual Prices')
+plt.plot(predicted, label='Predicted Prices')
+plt.title(f"{stock_symbol} Price Prediction")
+plt.legend()
+plt.show()
+
+# Alternative: Fetch data from Alpha Vantage (uncomment to use)
+"""
+api_key = "YOUR_API_KEY"  # Replace with your Alpha Vantage API key
+url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={stock_symbol}&apikey={api_key}&outputsize=full"
+response = requests.get(url).json()
+prices = [float(day['4. close']) for day in response['Time Series (Daily)'].values()]
+prices = np.array(prices[::-1]).reshape(-1, 1)  # Reverse to chronological order
+"""
+
+
+How to Use
+1.  Setup: Install required libraries and get an Alpha Vantage API key (or use yfinance as shown).
+2.  Run Code: Copy this into a Jupyter Notebook or Python script. Change stock_symbol to your desired stock (e.g., “TSLA”).
+3.  Output: It predicts the next day’s closing price and plots actual vs. predicted prices for the test set.
+4.  Customize: Adjust seq_length (e.g., 30 or 100 days) or model layers for better accuracy.
+Notes
+•  Accuracy: LSTMs can capture trends but aren’t foolproof due to market volatility. Use predictions as one data point, not gospel.
+•  Data Source: yfinance is simpler for free use; Alpha Vantage offers more data types but has API limits.
+•  Next Steps: Want to tweak the model (e.g., add indicators like RSI) or focus on a specific stock? Let me know!
