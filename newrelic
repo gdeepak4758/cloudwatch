@@ -1,16 +1,22 @@
-const assert = require("assert");
+$network.setProxy('http://aws-proxy:8099');
+var assert = require('assert');
+var TestURL = 'https://cb4good.com:8443/sysMonitor?RequestType';
 
-const options = {
+$http.get({
+  url: TestURL,
   headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36)",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive"
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive'
   }
-};
-
-$http.get("https://<your-sfg-url>", options, function (err, response, body) {
-  console.log("Status code: ", response && response.statusCode);
-  assert.strictEqual(response && response.statusCode, 200, "Expected HTTP 200 OK");
+}, function (error, response, body) {
+  if (error) {
+    console.log('HTTP request failed:', error);
+    assert.fail(error);
+  } else {
+    console.log('HTTP status:', response.statusCode);
+    assert.strictEqual(response.statusCode, 200, `HTTP status code was ${response.statusCode}`);
+  }
 });
