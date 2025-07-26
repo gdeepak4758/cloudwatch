@@ -1,0 +1,30 @@
+<choice>
+  <when expression="/ProcessData/FSA_DocumentCount &gt; 0">
+    <!-- Files were collected — proceed as usual -->
+    <!-- No action needed here unless you want to log that files were found -->
+  </when>
+
+  <otherwise>
+    <!-- No files were collected — log a message -->
+    <operation name="Log No Files">
+      <participant name="BPLog"/>
+      <output message="BPLogMessage">
+        <assign to="text">[INFO] No files were collected today. Proceeding with JDBC cleanup.</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+
+    <!-- And inject a dummy PrimaryDocument so the JDBC step has something to work with -->
+    <operation name="Assign DummyDoc">
+      <participant name="AssignService"/>
+      <output message="inmsg">
+        <assign to="DummyNode">NoFilesCollected</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+  </otherwise>
+</choice>
